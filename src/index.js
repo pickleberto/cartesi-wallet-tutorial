@@ -1,5 +1,5 @@
 import { Router } from "cartesi-router";
-import { Wallet } from "cartesi-wallet";
+import { Error_out, Report, Wallet } from "cartesi-wallet";
 import { hexToString } from "viem";
 
 const rollup_server = process.env.ROLLUP_HTTP_SERVER_URL;
@@ -8,6 +8,7 @@ console.log("HTTP rollup_server url is " + rollup_server);
 const wallet = new Wallet(new Map());
 const router = new Router(wallet);
 const etherPortalAddress = "0xffdbe43d4c855bf7e0f105c400a50857f53ab044";
+const dappAddressRelayContract = "0xf5de34d6bbc0446e2a45719e718efebaae179dae";
 
 async function handle_advance(data) {
   console.log("Received advance request data " + JSON.stringify(data));
@@ -20,7 +21,23 @@ async function handle_advance(data) {
     return router.process("ether_deposit", data.payload);
   }
 
-  return "accept";
+  // set dapp address
+  if(msg_sender.toLowerCase() === dappAddressRelayContract.toLowerCase())
+  {
+    try
+    {
+      router.set_rollup_address(data.payload, "ether_withdraw");
+    }
+    catch(e)
+    {
+      return new Error_out(`dapp address setup failed with error ${e}`);
+    }
+    return new Report("Dapp address set successfully.");
+  }
+
+  // withdraw ether - generic call
+  const payloadObj = JSON.parse(hexToString(data.payload));
+  return router.process(payloadObj.method, data);
 }
 
 async function handle_inspect(data) {
@@ -34,6 +51,11 @@ async function handle_inspect(data) {
 async function send_request(output) 
 {
   let endpoint = "/report";
+  if(output.type == "voucher")
+  {
+    endpoint = "/voucher";
+  }
+
   const response = await fetch(rollup_server + endpoint, {
     method: "POST",
     headers: {
